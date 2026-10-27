@@ -84,6 +84,7 @@ pub struct Browser {
     loaded: PathBuf,
     entries: Vec<(String, bool)>,
     name: String,
+    seq: u32,
 }
 
 fn start_dir() -> PathBuf {
@@ -101,6 +102,7 @@ pub fn show(ctx: &egui::Context, st: &mut Browser) {
             st.name = r.file_name.clone();
             st.dir = start_dir();
             st.loaded = PathBuf::new();
+            st.seq = st.seq.wrapping_add(1);
             st.req = Some(r);
         }
     }
@@ -128,6 +130,8 @@ pub fn show(ctx: &egui::Context, st: &mut Browser) {
         Kind::PickFolder => "Select a folder",
     };
     egui::Window::new(title)
+        .id(egui::Id::new(("zcb_file_dialog", st.seq)))
+        .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
