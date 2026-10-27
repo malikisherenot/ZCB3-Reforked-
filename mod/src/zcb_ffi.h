@@ -16,6 +16,7 @@ void zcb_live_action(int button, bool player2, bool push);
 void zcb_live_set_level(bool v);
 void zcb_live_set_time(double t);
 void zcb_live_reset();
+void zcb_live_tick(double now);
 bool zcb_live_force_p2();
 bool zcb_live_take_reset();
 int zcb_live_next_pcm(const short** data, unsigned* frames, unsigned* rate, bool* looped);

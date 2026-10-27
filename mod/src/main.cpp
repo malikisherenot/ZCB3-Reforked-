@@ -252,7 +252,14 @@ class $modify(ZcbDirector, CCDirector) {
     void drawScene() {
         CCDirector::drawScene();
         liveUpload();
-        zcb_live_set_level(PlayLayer::get() != nullptr);
+        if (auto pl = PlayLayer::get()) {
+            zcb_live_set_level(true);
+            zcb_live_set_time(pl->m_currentTime);
+            zcb_live_tick(pl->m_currentTime);
+        } else {
+            zcb_live_set_level(false);
+        }
+        liveDrainPlays();
         liveNoise();
         // hide the button (and close the window) while actually playing a level; paused is fine
         auto scene = CCDirector::get()->getRunningScene();
