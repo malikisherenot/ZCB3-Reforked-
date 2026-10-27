@@ -114,7 +114,7 @@ impl Runtime {
             .native_pixels_per_point = Some(p);
 
         let (app, browser) = (&mut self.app, &mut self.browser);
-        let out = self.ctx.run_ui(raw, |ui| {
+        let mut out = self.ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
             let screen = ctx.content_rect();
             let size = egui::vec2(460.0, 500.0).min(screen.size() - egui::vec2(12.0, 12.0));
@@ -133,7 +133,7 @@ impl Runtime {
             android_dialog::show(&ctx, browser);
         });
 
-        WANTS_KB.store(self.ctx.wants_keyboard_input(), Relaxed);
+        WANTS_KB.store(self.ctx.egui_wants_keyboard_input(), Relaxed);
         for cmd in &out.platform_output.commands {
             if let egui::OutputCommand::OpenUrl(u) = cmd {
                 *URL.lock().unwrap() = Some(u.url.clone());
@@ -144,7 +144,7 @@ impl Runtime {
             [w as u32, h as u32],
             out.pixels_per_point,
             &prims,
-            &out.textures_delta,
+            &mut out.textures_delta,
         );
     }
 }
