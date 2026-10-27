@@ -5,6 +5,6 @@
 	"id": "itzmalikhere.zcb",
 	"name": "ZCB3",
 	"developer": "itzmalikhere",
-	"description": "ZCB3 clickbot on Android. Tap the floating ZCB button to open it.",
+	"description": "ZCB3 clickbot on Android: offline renderer plus a real-time live clickbot. Tap the floating Z button to open it.",
 	"tags": ["utility"]
 }
