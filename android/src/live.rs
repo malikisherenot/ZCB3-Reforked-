@@ -1,5 +1,5 @@
 //! ZCB Live core (real-time clickbot). Rust decides WHAT to play, C++ plays it through GD's FMOD.
-use bot::{AudioSegment, Bot, ClickType, Pitch, Timings, VolumeSettings};
+use bot::{Action, AudioSegment, Bot, Click, ClickType, Pitch, Player, Replay, ReplayType, Timings, VolumeSettings};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
@@ -28,6 +28,7 @@ pub struct LiveConfig {
     pub force_p2: bool,
     pub noise: bool,
     pub noise_volume: f32,
+    pub macro_play: bool,
 }
 
 impl Default for LiveConfig {
@@ -48,6 +49,7 @@ impl Default for LiveConfig {
             force_p2: false,
             noise: true,
             noise_volume: 1.0,
+            macro_play: true,
         }
     }
 }
@@ -65,7 +67,15 @@ struct Loaded {
     noise: Option<u32>,
 }
 
+struct MacroState {
+    actions: Vec<Action>,
+    cursor: usize,
+    last: f64,
+}
+
 struct State {
+    mac: Option<MacroState>,
+    mac_status: String,
     conf: LiveConfig,
     saved: String,
     save_dir: PathBuf,
@@ -84,6 +94,8 @@ struct State {
 
 static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
     Mutex::new(State {
+        mac: None,
+        mac_status: "No macro loaded".into(),
         conf: LiveConfig::default(),
         saved: String::new(),
         save_dir: PathBuf::new(),
@@ -309,11 +321,93 @@ fn on_action(s: &mut State, button: i32, player2: bool, push: bool) {
     prev[key] = (now, push);
 }
 
+fn macro_trigger(s: &mut State, a: &Action) {
+    let (btn, typ) = match a.click {
+        Click::Regular(t) => (1, t),
+        Click::Left(t) => (2, t),
+        Click::Right(t) => (3, t),
+    };
+    let push = matches!(
+        typ,
+        ClickType::HardClick | ClickType::Click | ClickType::SoftClick | ClickType::MicroClick
+    );
+    if matches!(typ, ClickType::None) {
+        return;
+    }
+    let saved = s.time;
+    s.time = a.time;
+    on_action(s, btn, matches!(a.player, Player::Two), push);
+    s.time = saved;
+}
+
+fn macro_tick(s: &mut State, now: f64) {
+    if !s.conf.enabled || !s.conf.macro_play || !s.in_level {
+        return;
+    }
+    let Some(m) = s.mac.as_mut() else { return };
+    let rewound = now < m.last - 0.05;
+    if rewound {
+        m.cursor = m.actions.partition_point(|a| a.time < now);
+    }
+    m.last = now;
+    let mut due: Vec<Action> = Vec::new();
+    while m.cursor < m.actions.len() && m.actions[m.cursor].time <= now {
+        let a = m.actions[m.cursor];
+        m.cursor += 1;
+        if now - a.time <= 0.15 {
+            due.push(a);
+        }
+    }
+    if rewound {
+        s.prev = [(0.0, false); 6];
+    }
+    for a in due {
+        macro_trigger(s, &a);
+    }
+}
+
+fn load_macro(path: PathBuf) {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> anyhow::Result<Replay> {
+        let typ = ReplayType::guess_format(&name)?;
+        let f = std::fs::File::open(&path)?;
+        Replay::build()
+            .with_sort_actions(true)
+            .parse(typ, std::io::BufReader::new(f))
+    }));
+    let mut s = state();
+    match r {
+        Ok(Ok(replay)) => {
+            s.mac_status = format!("{name}: {} actions, {:.1}s", replay.actions.len(), replay.duration);
+            s.mac = Some(MacroState {
+                actions: replay.actions,
+                cursor: 0,
+                last: 0.0,
+            });
+        }
+        Ok(Err(e)) => s.mac_status = format!("Failed to load macro: {e}"),
+        Err(_) => s.mac_status = "Failed to load macro (crashed)".into(),
+    }
+}
+
 // ---------------------------------------------------------------- FFI (GL thread)
+
+/// Called every frame while a level is open; drives macro playback.
+#[no_mangle]
+pub extern "C" fn zcb_live_tick(now: f64) {
+    macro_tick(&mut state(), now);
+}
 
 #[no_mangle]
 pub extern "C" fn zcb_live_action(button: i32, player2: bool, push: bool) {
-    on_action(&mut state(), button, player2, push);
+    let mut s = state();
+    if s.conf.macro_play && s.mac.is_some() {
+        return; // clicks come from the macro instead
+    }
+    on_action(&mut s, button, player2, push);
 }
 
 #[no_mangle]
@@ -440,6 +534,34 @@ fn contents(ui: &mut egui::Ui, s: &mut State) {
         }
     }
 
+    egui::CollapsingHeader::new("Macro (real-time clicks)")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.checkbox(&mut s.conf.macro_play, "Play macro clicks in real time");
+            ui.label(&s.mac_status);
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Select macro").clicked() {
+                    std::thread::spawn(|| {
+                        if let Some(p) = crate::android_dialog::FileDialog::new()
+                            .add_filter("Replay", Replay::SUPPORTED_EXTENSIONS)
+                            .pick_file()
+                        {
+                            load_macro(p);
+                        }
+                    });
+                }
+                if s.mac.is_some() && ui.button("Unload macro").clicked() {
+                    s.mac = None;
+                    s.mac_status = "No macro loaded".into();
+                }
+            });
+            ui.label(
+                egui::RichText::new("Start the level and the clicks follow the level time. Real button presses are ignored while a macro is loaded.")
+                    .weak()
+                    .small(),
+            );
+        });
+
     egui::CollapsingHeader::new("Timings").show(ui, |ui| {
         slider(ui, &mut s.conf.timings.hard, 0.1..=5.0, "Hard timing");
         slider(ui, &mut s.conf.timings.regular, 0.01..=1.0, "Regular timing");
@@ -496,7 +618,6 @@ pub fn show_window(ctx: &egui::Context) {
     let max_h = (ctx.content_rect().height() - 90.0).max(120.0);
     egui::Window::new("ZCB Live")
         .id(egui::Id::new("zcb_live_win"))
-        .order(egui::Order::Foreground)
         .open(&mut open)
         .collapsible(false)
         .default_width(340.0)

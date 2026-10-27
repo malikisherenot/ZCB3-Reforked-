@@ -85,6 +85,11 @@ impl Runtime {
             .ok()?;
         let ctx = egui::Context::default();
         ctx.set_theme(egui::Theme::Dark);
+        // bigger grab areas so windows are easy to resize with a finger
+        ctx.all_styles_mut(|st| {
+            st.interaction.resize_grab_radius_side = 14.0;
+            st.interaction.resize_grab_radius_corner = 24.0;
+        });
         egui_extras::install_image_loaders(&ctx);
         android_dialog::init(&dir);
         Some(Self {
@@ -121,18 +126,25 @@ impl Runtime {
             let ctx = ui.ctx().clone();
             let screen = ctx.content_rect();
             let size = egui::vec2(460.0, 500.0).min(screen.size() - egui::vec2(12.0, 12.0));
-            let pos = screen.center() - size / 2.0;
-            egui::Area::new(egui::Id::new("zcb_main"))
-                .order(egui::Order::Middle)
-                .fixed_pos(pos)
+            let mut open = true;
+            egui::Window::new("ZCB3")
+                .id(egui::Id::new("zcb_main"))
+                .open(&mut open)
+                .default_size(size)
+                .default_pos(screen.center() - size / 2.0)
+                .min_size([300.0, 220.0])
+                .resizable(true)
                 .show(&ctx, |ui| {
-                    let (r, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                    ui.painter()
-                        .rect_filled(r, 6.0, ui.visuals().panel_fill);
+                    let avail = ui.available_size();
+                    let (r, _) = ui.allocate_exact_size(avail, egui::Sense::hover());
                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
                     child.set_clip_rect(r);
                     app.show(&mut child);
                 });
+            if !open {
+                VISIBLE.store(false, Relaxed);
+                WANTS_KB.store(false, Relaxed);
+            }
             android_dialog::show(&ctx, browser);
             live::show_window(&ctx);
         });
