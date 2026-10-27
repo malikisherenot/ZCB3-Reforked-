@@ -394,6 +394,11 @@ impl eframe::App for App {
 }
 
 impl App {
+    #[cfg(target_os = "android")]
+    pub fn clickpack_dir(&self) -> Option<PathBuf> {
+        self.clickpack_path.clone()
+    }
+
     pub fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         #[cfg(target_arch = "wasm32")]
@@ -484,6 +489,15 @@ impl App {
                         .clicked()
                     {
                         self.do_update_check(&modal, &update_dialog);
+                    }
+
+                    #[cfg(target_os = "android")]
+                    if ui
+                        .button("Live")
+                        .on_hover_text("Real-time clickbot (plays clicks while you play)")
+                        .clicked()
+                    {
+                        crate::live::toggle_window();
                     }
 
                     ui.hyperlink_to("Join the Discord server", "https://discord.gg/b4kBQyXYZT");
