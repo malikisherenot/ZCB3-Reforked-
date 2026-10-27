@@ -10,4 +10,15 @@ void zcb_touch(int phase, int id, float x, float y);
 void zcb_text(const char* s);
 void zcb_key(int key); // 0 backspace, 1 enter
 int zcb_poll_url(char* buf, unsigned long cap);
+
+// --- live clickbot
+void zcb_live_action(int button, bool player2, bool push);
+void zcb_live_set_level(bool v);
+void zcb_live_set_time(double t);
+void zcb_live_reset();
+bool zcb_live_force_p2();
+bool zcb_live_take_reset();
+int zcb_live_next_pcm(const short** data, unsigned* frames, unsigned* rate, bool* looped);
+bool zcb_live_poll_play(unsigned* id, float* vol, float* pitch);
+bool zcb_live_noise(unsigned* id, float* vol);
 }

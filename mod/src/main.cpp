@@ -3,6 +3,8 @@
 #include <Geode/modify/CCDirector.hpp>
 #include <Geode/modify/CCTouchDispatcher.hpp>
 #include <Geode/modify/CCIMEDispatcher.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/PlayLayer.hpp>
 #include <GLES2/gl2.h>
 #include <set>
 #include <string>
@@ -108,6 +110,106 @@ $on_mod(Loaded) {
     });
 }
 
+
+// ===================================================================== live clickbot
+static std::vector<FMOD::Sound*> g_sounds;
+static FMOD::Channel* g_noiseCh = nullptr;
+
+static FMOD::System* fmodSystem() {
+    auto engine = FMODAudioEngine::get();
+    return engine ? engine->m_system : nullptr;
+}
+
+// move decoded clickpack sounds from Rust into FMOD
+static void liveUpload() {
+    auto sys = fmodSystem();
+    if (!sys) return;
+    if (zcb_live_take_reset()) {
+        if (g_noiseCh) { g_noiseCh->stop(); g_noiseCh = nullptr; }
+        for (auto s : g_sounds) if (s) s->release();
+        g_sounds.clear();
+    }
+    const short* data; unsigned frames, rate; bool looped;
+    int id;
+    while ((id = zcb_live_next_pcm(&data, &frames, &rate, &looped)) >= 0) {
+        FMOD_CREATESOUNDEXINFO ex{};
+        ex.cbsize = sizeof(ex);
+        ex.length = frames * 2 * sizeof(short);
+        ex.numchannels = 2;
+        ex.defaultfrequency = (int)rate;
+        ex.format = FMOD_SOUND_FORMAT_PCM16;
+        FMOD_MODE mode = FMOD_OPENMEMORY | FMOD_OPENRAW | FMOD_CREATESAMPLE | FMOD_2D |
+                         (looped ? FMOD_LOOP_NORMAL : FMOD_LOOP_OFF);
+        FMOD::Sound* snd = nullptr;
+        sys->createSound(reinterpret_cast<const char*>(data), mode, &ex, &snd);
+        if ((size_t)id >= g_sounds.size()) g_sounds.resize(id + 1, nullptr);
+        g_sounds[id] = snd;
+    }
+}
+
+static void liveDrainPlays() {
+    auto sys = fmodSystem();
+    if (!sys) return;
+    unsigned id; float vol, pitch;
+    while (zcb_live_poll_play(&id, &vol, &pitch)) {
+        if (id >= g_sounds.size() || !g_sounds[id]) continue;
+        FMOD::Channel* ch = nullptr;
+        sys->playSound(g_sounds[id], nullptr, true, &ch);
+        if (ch) { ch->setVolume(vol); ch->setPitch(pitch); ch->setPaused(false); }
+    }
+}
+
+static void liveNoise() {
+    auto sys = fmodSystem();
+    unsigned id; float vol;
+    bool want = sys && zcb_live_noise(&id, &vol) && id < g_sounds.size() && g_sounds[id];
+    if (want) {
+        bool playing = false;
+        if (g_noiseCh) g_noiseCh->isPlaying(&playing);
+        if (!playing) {
+            g_noiseCh = nullptr;
+            sys->playSound(g_sounds[id], nullptr, true, &g_noiseCh);
+            if (g_noiseCh) g_noiseCh->setPaused(false);
+        }
+        if (g_noiseCh) g_noiseCh->setVolume(vol);
+    } else if (g_noiseCh) {
+        g_noiseCh->stop();
+        g_noiseCh = nullptr;
+    }
+}
+
+class $modify(ZcbLiveGameLayer, GJBaseGameLayer) {
+    void handleButton(bool push, int button, bool player1) {
+        auto pl = PlayLayer::get();
+        if (pl && pl->m_player1 && pl->m_player2) {
+            zcb_live_set_level(true);
+            zcb_live_set_time(pl->m_currentTime);
+            bool invalid = (button == 2 || button == 3) &&
+                           !(player1 && pl->m_player1->m_isPlatformer) &&
+                           !(!player1 && pl->m_player2->m_isPlatformer);
+            if (!invalid) {
+                bool p2 = !player1 && (pl->m_levelSettings->m_twoPlayerMode || zcb_live_force_p2());
+                zcb_live_action(button, p2, push);
+                liveDrainPlays();
+            }
+        }
+        GJBaseGameLayer::handleButton(push, button, player1);
+    }
+};
+
+class $modify(ZcbLivePlayLayer, PlayLayer) {
+    void resetLevel() {
+        zcb_live_reset();
+        PlayLayer::resetLevel();
+    }
+    void onQuit() {
+        zcb_live_set_level(false);
+        zcb_live_reset();
+        PlayLayer::onQuit();
+    }
+};
+// =====================================================================
+
 struct GLState {
     GLint prog, abuf, ebuf, unit, tex0, texU, vp[4], bsrc, bdst, bsrca, bdsta, attr[8];
     GLboolean blend, depth, cull, scissor, mask[4];
@@ -149,6 +251,9 @@ struct GLState {
 class $modify(ZcbDirector, CCDirector) {
     void drawScene() {
         CCDirector::drawScene();
+        liveUpload();
+        zcb_live_set_level(PlayLayer::get() != nullptr);
+        liveNoise();
         // hide the button (and close the window) while actually playing a level; paused is fine
         auto scene = CCDirector::get()->getRunningScene();
         bool playing = PlayLayer::get() && !(scene && scene->getChildByType<PauseLayer>(0));
