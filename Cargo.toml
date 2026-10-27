@@ -15,7 +15,7 @@ license = false
 eula = false
 
 [workspace]
-members = [".", "bot", "bot/ybot_fmt", "bot/gdr", "bot/gdr2"]
+members = [".", "bot", "bot/ybot_fmt", "bot/gdr", "bot/gdr2", "android"]
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
