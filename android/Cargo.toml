@@ -9,7 +9,7 @@ crate-type = ["staticlib"]
 [dependencies]
 bot = { path = "../bot" }
 egui_clickpack_db = { path = "../egui_clickpack_db" }
-eframe = { version = "0.36", default-features = false, features = ["default_fonts"] }
+eframe = { path = "eframe_shim" }
 egui = "0.36"
 egui_glow = { version = "0.36", default-features = false }
 egui_extras = { version = "0.36", features = ["image"] }
