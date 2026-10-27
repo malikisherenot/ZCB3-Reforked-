@@ -21,7 +21,7 @@ static CCPoint toPixels(CCPoint p) {
 }
 
 static bool overButton(CCPoint px) {
-    if (!g_button) return false;
+    if (!g_button || !g_button->isVisible()) return false;
     auto win = CCDirector::get()->getWinSize();
     auto fr = CCEGLView::get()->getFrameSize();
     auto r = g_button->boundingBox();
@@ -44,17 +44,17 @@ public:
     }
     bool init() override {
         if (!CCNode::init()) return false;
-        this->setContentSize({46.f, 26.f});
+        this->setContentSize({30.f, 30.f});
         this->setAnchorPoint({0.5f, 0.5f});
-        auto bg = CCScale9Sprite::create("square02_001.png", {0, 0, 80, 80});
-        bg->setContentSize(this->getContentSize());
-        bg->setColor({22, 22, 30});
-        bg->setOpacity(215);
-        bg->setPosition(this->getContentSize() / 2);
-        this->addChild(bg);
-        auto lbl = CCLabelBMFont::create("ZCB", "bigFont.fnt");
-        lbl->setScale(0.45f);
-        lbl->setPosition(this->getContentSize() / 2);
+        this->ignoreAnchorPointForPosition(false);
+        auto c = this->getContentSize() / 2;
+        auto dot = CCDrawNode::create();
+        dot->drawDot(c, 15.f, {0.30f, 0.30f, 0.30f, 1.f});          // thin outline
+        dot->drawDot(c, 14.f, {27 / 255.f, 27 / 255.f, 27 / 255.f, 1.f}); // egui dark panel_fill
+        this->addChild(dot);
+        auto lbl = CCLabelBMFont::create("Z", "bigFont.fnt");
+        lbl->setScale(0.5f);
+        lbl->setPosition(c);
         this->addChild(lbl);
         auto win = CCDirector::get()->getWinSize();
         this->setPosition({Mod::get()->getSavedValue<float>("btn-x", 40.f),
@@ -66,8 +66,9 @@ public:
         CCDirector::get()->getTouchDispatcher()->removeDelegate(this);
     }
     bool ccTouchBegan(CCTouch* t, CCEvent*) override {
+        if (!this->isVisible()) return false;
         auto local = this->getParent()->convertToNodeSpace(t->getLocation());
-        if (!this->boundingBox().containsPoint(local)) return false;
+        if (ccpDistance(local, this->getPosition()) > 15.f) return false;
         m_down = true; m_drag = false;
         m_start = t->getLocation(); m_startPos = this->getPosition();
         return true;
@@ -79,8 +80,8 @@ public:
         if (m_drag) {
             auto win = CCDirector::get()->getWinSize();
             auto p = m_startPos + d;
-            p.x = std::clamp(p.x, 23.f, win.width - 23.f);
-            p.y = std::clamp(p.y, 13.f, win.height - 13.f);
+            p.x = std::clamp(p.x, 15.f, win.width - 15.f);
+            p.y = std::clamp(p.y, 15.f, win.height - 15.f);
             this->setPosition(p);
         }
     }
@@ -148,6 +149,11 @@ struct GLState {
 class $modify(ZcbDirector, CCDirector) {
     void drawScene() {
         CCDirector::drawScene();
+        // hide the button (and close the window) while actually playing a level; paused is fine
+        auto scene = CCDirector::get()->getRunningScene();
+        bool playing = PlayLayer::get() && !(scene && scene->getChildByType<PauseLayer>(0));
+        if (g_button) g_button->setVisible(!playing);
+        if (playing) zcb_set_visible(false);
         if (!zcb_is_visible()) {
             if (g_kb) { g_kb = false; CCEGLView::get()->setIMEKeyboardState(false); }
             return;
