@@ -573,6 +573,7 @@ impl App {
                 };
                 egui::Window::new(title)
                     .open(&mut open)
+                    .order(egui::Order::Foreground)
                     .default_size([410.0, 440.0])
                     .show(&ctx, |ui| {
                         self.show_clickpack_db(&ctx, ui);
