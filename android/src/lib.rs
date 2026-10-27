@@ -83,6 +83,7 @@ impl Runtime {
             .map_err(|e| log::error!("painter: {e}"))
             .ok()?;
         let ctx = egui::Context::default();
+        ctx.set_theme(egui::Theme::Dark);
         egui_extras::install_image_loaders(&ctx);
         android_dialog::init(&dir);
         Some(Self {
