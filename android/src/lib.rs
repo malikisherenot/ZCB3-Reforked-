@@ -11,6 +11,7 @@ use std::{
 };
 
 mod android_dialog;
+mod live;
 #[path = "../../src/gui.rs"]
 mod gui;
 #[path = "../../src/utils.rs"]
@@ -114,6 +115,7 @@ impl Runtime {
             .or_default()
             .native_pixels_per_point = Some(p);
 
+        live::set_main_clickpack(self.app.clickpack_dir());
         let (app, browser) = (&mut self.app, &mut self.browser);
         let mut out = self.ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
@@ -132,6 +134,7 @@ impl Runtime {
                     app.show(&mut child);
                 });
             android_dialog::show(&ctx, browser);
+            live::show_window(&ctx);
         });
 
         WANTS_KB.store(self.ctx.egui_wants_keyboard_input(), Relaxed);
@@ -157,6 +160,7 @@ fn push(e: egui::Event) {
 #[no_mangle]
 pub extern "C" fn zcb_init(save_dir: *const c_char) {
     let dir = unsafe { CStr::from_ptr(save_dir) }.to_string_lossy().to_string();
+    live::init(&dir);
     *SAVE_DIR.lock().unwrap() = dir;
     android_logger::init_once(
         android_logger::Config::default()
