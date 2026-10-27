@@ -14,7 +14,9 @@ use egui_clickpack_db::ClickpackDb;
 use egui_modal::{Icon, Modal};
 use egui_plot::PlotPoint;
 use poll_promise::Promise;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "android")]
+use crate::android_dialog::FileDialog;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 use rfd::FileDialog;
 #[cfg(target_arch = "wasm32")]
 use rfd::FileHandle;
@@ -249,7 +251,7 @@ impl Default for Config {
     }
 }
 
-struct App {
+pub struct App {
     conf: Config,
     stage: Stage,
     replay: Replay,
@@ -387,6 +389,12 @@ fn drag_value<Num: emath::Numeric>(
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
+    }
+}
+
+impl App {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         #[cfg(target_arch = "wasm32")]
         if let Some(window) = web_sys::window() {
@@ -469,7 +477,7 @@ impl eframe::App for App {
                     {
                         self.stage = self.stage.previous();
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
+                    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
                     if ui
                         .button("Check for updates")
                         .on_hover_text("Check if your ZCB version is up-to-date")
@@ -513,7 +521,7 @@ impl eframe::App for App {
             update_dialog.show_dialog();
             modal.show_dialog();
 
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             self.show_update_check_modal(&modal);
         });
 
@@ -555,7 +563,25 @@ impl eframe::App for App {
                 }
             }
 
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(target_os = "android")]
+            {
+                let mut open = true;
+                let title = if self.clickpack_db_title.is_empty() {
+                    "ClickpackDB".to_string()
+                } else {
+                    self.clickpack_db_title.clone()
+                };
+                egui::Window::new(title)
+                    .open(&mut open)
+                    .default_size([410.0, 440.0])
+                    .show(&ctx, |ui| {
+                        self.show_clickpack_db(&ctx, ui);
+                    });
+                if !open {
+                    self.show_clickpack_db = false;
+                }
+            }
+            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
             {
                 let builder = egui::ViewportBuilder::default()
                     .with_title(if self.clickpack_db_title.is_empty() {
@@ -2982,7 +3008,7 @@ impl App {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 pub fn run_gui() -> Result<(), eframe::Error> {
     let img = image::ImageReader::new(std::io::Cursor::new(include_bytes!("assets/icon.ico")))
         .with_guessed_format()
